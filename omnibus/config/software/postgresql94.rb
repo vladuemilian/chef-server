@@ -14,11 +14,11 @@
 # limitations under the License.
 #
 
-name "postgresql92"
-default_version "9.2.10"
+name "postgresql94"
+default_version "9.4.2"
 
-source url: "http://ftp.postgresql.org/pub/source/v9.2.10/postgresql-9.2.10.tar.bz2",
-       md5: "7b81646e2eaf67598d719353bf6ee936"
+source url: "http://ftp.postgresql.org/pub/source/v#{version}/postgresql-#{version}.tar.bz2",
+       md5: "b6369156607a4fd88f21af6fec0f30b9"
 
 dependency "zlib"
 dependency "openssl"
@@ -26,13 +26,13 @@ dependency "libedit"
 dependency "ncurses"
 dependency "libossp-uuid"
 
-relative_path "postgresql-9.2.10"
+relative_path "postgresql-#{version}"
 
 build do
   env = with_standard_compiler_flags(with_embedded_path)
 
   command "./configure" \
-          " --prefix=#{install_dir}/embedded/postgresql/9.2" \
+          " --prefix=#{install_dir}/embedded/postgresql/9.4" \
           " --with-libedit-preferred" \
           " --with-openssl" \
           " --with-ossp-uuid" \
@@ -41,4 +41,15 @@ build do
 
   make "world -j #{workers}", env: env
   make "install-world -j #{workers}", env: env
+
+
+  # Postgres 9.4 is our "real" Postgres installation (prior versions
+  # that are installed are solely to facilitate upgrades).  As a
+  # result, we need to have the binaries for this version available
+  # with the other binaries used by Private Chef.
+  block do
+    Dir.glob("#{install_dir}/embedded/postgresql/9.4/bin/*").sort.each do |bin|
+      link bin, "#{install_dir}/embedded/bin/#{File.basename(bin)}"
+    end
+  end
 end

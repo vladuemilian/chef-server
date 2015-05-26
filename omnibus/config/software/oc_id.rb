@@ -18,7 +18,7 @@ name "oc_id"
 
 source path: "#{project.files_path}/../../src/oc-id"
 
-dependency "postgresql92" # for libpq
+dependency "postgresql94" # for libpq
 dependency "nodejs"
 dependency "ruby"
 dependency "bundler"
