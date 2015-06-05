@@ -1,6 +1,7 @@
 GIT
   remote: git://github.com/opscode/omnibus-software.git
-  revision: 0fb66f82eef7b52d866a9fbc153fc4b1d686e8c9
+  revision: 1aa8ead8879d485dae1e656a191dcd82010bb148
+  branch: tc/test-my-chef
   specs:
     omnibus-software (4.0.0)
 
@@ -34,7 +35,7 @@ GEM
     mixlib-config (2.2.1)
     mixlib-log (1.6.0)
     mixlib-shellout (1.6.1)
-    mixlib-versioning (1.0.0)
+    mixlib-versioning (1.1.0)
     ohai (7.4.1)
       ffi (~> 1.9)
       ffi-yajl (~> 1.1)
