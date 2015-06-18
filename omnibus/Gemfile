@@ -1,9 +1,8 @@
 source 'https://rubygems.org'
 
 # Install omnibus software
-gem 'omnibus', github: 'chef/omnibus'
-gem 'omnibus-software', github: 'chef/omnibus-software'
+gem 'omnibus', github: 'opscode/omnibus'
+gem 'omnibus-software', :git => 'https://github.com/chef/omnibus-software.git', :branch => 'shain/fips'
 gem 'rake'
 gem 'chefspec'
 gem 'berkshelf'
-
