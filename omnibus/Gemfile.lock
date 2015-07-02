@@ -1,12 +1,13 @@
 GIT
   remote: git://github.com/chef/omnibus-software.git
-  revision: ef22f9adac5868a1718acd66f3224bd2fd5368b5
+  revision: cf4ad89375f4a872c31fdeea20b20f63e0a8d53e
+  branch: tc/fix-upgrades
   specs:
     omnibus-software (4.0.0)
 
 GIT
   remote: git://github.com/chef/omnibus.git
-  revision: 01f64177c9cb002cdeea9269df9895f51aa51514
+  revision: 438bb3561c4945110452b416448e417c42e8ba27
   specs:
     omnibus (4.0.0)
       chef-sugar (~> 3.0)
@@ -21,9 +22,9 @@ GIT
 GEM
   remote: https://rubygems.org/
   specs:
-    chef-sugar (3.1.0)
+    chef-sugar (3.1.1)
     cleanroom (1.0.0)
-    ffi (1.9.8)
+    ffi (1.9.10)
     ffi-yajl (1.4.0)
       ffi (~> 1.5)
       libyajl2 (~> 1.2)
@@ -61,3 +62,6 @@ DEPENDENCIES
   omnibus!
   omnibus-software!
   rake
+
+BUNDLED WITH
+   1.10.5
