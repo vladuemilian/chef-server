@@ -32,10 +32,11 @@ add_command_under_category "psql", "Database", "Connect to your psql instances."
   db_config = running_config
 
   if File.exists?("/etc/opscode-push-jobs-server/opscode-push-jobs-server-running.json")
-    db_config.merge(JSON.parse(File.read("/etc/opscode-push-jobs-server/opscode-push-jobs-server-running.json")))
+    db_config.merge!(JSON.parse(File.read("/etc/opscode-push-jobs-server/opscode-push-jobs-server-running.json")))
+      #require 'pry'; binding.pry
   end
   if File.exists?("/etc/opscode-reporting/opscode-reporting-running.json")
-    db_config.merge(JSON.parse(File.read("/etc/opscode-reporting/opscode-reporting-running.json")))
+    db_config.merge!(JSON.parse(File.read("/etc/opscode-reporting/opscode-reporting-running.json")))
   end
 
   seed=known_dbs[service_name]["hashseed"]
@@ -49,12 +50,11 @@ add_command_under_category "psql", "Database", "Connect to your psql instances."
   db_port = db_config[seed]['postgresql']['port']
 
   if ARGV.include?('--debug') || ARGV.include?('-vv')
-    STDOUT.puts "Password: #{db_password}"
     STDOUT.puts "Host: #{db_host}"
-    STDOUT.puts "Username: #{db_username}"
     STDOUT.puts "Port: #{db_port}"
+    STDOUT.puts "Username: #{db_username}"
+    STDOUT.puts "Password: #{db_password}"
     STDOUT.puts "DBName: #{db_name}"
-    STDOUT.puts "Command: #{ARGV[-1]}"
   end
 
   cmd = "PGPASSWORD=#{db_password} PAGER=less LESS='-iMSx4 -FX' /opt/opscode/embedded/bin/psql --host #{db_host} --username #{db_username} --port #{db_port} --dbname #{db_name}"
