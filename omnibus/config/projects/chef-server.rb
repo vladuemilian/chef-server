@@ -32,6 +32,9 @@ override :berkshelf2, version: "2.0.18"
 override :rabbitmq, version: "3.3.4"
 override :erlang, version: "17.5"
 override :ruby, version: "2.1.4"
+# Override this explicitly for now, the desire is to move to "latest
+# released chef-client"
+override :chef, version: "12.4.1"
 
 # creates required build directories
 dependency "preparation"
