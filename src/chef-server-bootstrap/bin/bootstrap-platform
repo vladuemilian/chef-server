@@ -40,11 +40,15 @@ class BootstrapPlatform
 
     db = Sequel.connect("#{config['db_driver']}://#{config['db_user']}:#{config['db_password']}@#{config['db_host']}/opscode_chef")
 
-    #################################
-    # create superuser authz object #
-    #################################
+    #########################
+    # create  authz objects #
+    #########################
 
+    # for superuser
     superuser_authz_id = create_object_in_authz("actors", config['bifrost_superuser_id'], config['bifrost_host'], config['bifrost_port'])
+
+    # for global-admins global group
+    global_admins_authz_id = create_object_in_authz("groups", config['bifrost_superuser_id'], config['bifrost_host'], config['bifrost_port'])
 
     ####################
     # create superuser #
@@ -85,7 +89,14 @@ class BootstrapPlatform
     ##############################
     # create superuser container #
     ##############################
-    create_global_containers(superuser_authz_id, PLACEHOLDER_GLOBAL_ORG_ID, db, config['bifrost_host'], config['bifrost_port'])
+    global_container_authz_ids = create_global_containers(superuser_authz_id, PLACEHOLDER_GLOBAL_ORG_ID, db, config['bifrost_host'], config['bifrost_port'])
+
+    #####################################
+    # create global-admins global group #
+    #####################################
+    create_global_admins_global_group(db, superuser_authz_id, PLACEHOLDER_GLOBAL_ORG_ID, global_admins_authz_id)
+    # grant this object create and read on the users container
+    grant_authz_object_create_read("containers", global_container_authz_ids['users'], global_admins_authz_id, superuser_authz_id, config['bifrost_host'], config['bifrost_port'])
   end
 
   private
@@ -102,13 +113,52 @@ class BootstrapPlatform
     JSON.parse(result)["id"]
   end
 
+  def grant_authz_object_create_read(granted_on_object_type, granted_on_id, granted_to_id, requester_id, bifrost_host, bifrost_port)
+    base_url = "http://#{bifrost_host}:#{bifrost_port}/#{granted_on_object_type}/#{granted_on_id}/acl"
+    headers = {
+      :content_type => :json,
+      :accept => :json,
+      'X-Ops-Requesting-Actor-Id' => requester_id
+    }
+
+    # grant create perm
+    create_url = "#{base_url}/create"
+    original_create = JSON.parse(RestClient.get(create_url, headers))
+    original_create["groups"] << granted_to_id
+    RestClient.put(create_url, original_create.to_json, headers)
+
+    # grant read perm
+    read_url = "#{base_url}/read"
+    original_read = JSON.parse(RestClient.get(read_url, headers))
+    original_read["groups"] << granted_to_id
+    RestClient.put(read_url, original_read.to_json, headers)
+  end
+
   def create_global_containers(superuser_authz_id, placeholder_id, db, bifrost_host, bifrost_port)
+    global_container_authz_ids = {}
     %w(organizations users).each do |name|
       authz_id = create_object_in_authz("containers", superuser_authz_id, bifrost_host, bifrost_port)
+      global_container_authz_ids[name] = authz_id
       created_time = Time.now.utc
       db[:containers].insert(:name => name, :id => authz_id, :org_id => placeholder_id, :last_updated_by => superuser_authz_id, :authz_id => authz_id, :created_at => created_time.to_s[0..18], :updated_at => created_time.to_s[0..18])
     end
+    global_container_authz_ids
   end
+
+  def create_global_admins_global_group(db, superuser_authz_id, placeholder_id, precreated_authz_id)
+    created_time = Time.now.utc.to_s[0..18]
+
+    global_admins = {}
+    global_admins['id'] = UUID.new.generate(:compact)
+    global_admins['org_id'] = placeholder_id
+    global_admins['authz_id'] = precreated_authz_id
+    global_admins['name'] = 'global-admins'
+    global_admins['last_updated_by'] = superuser_authz_id
+    global_admins['created_at'] = created_time
+    global_admins['updated_at'] = created_time
+    db[:groups].insert(global_admins)
+  end
+    
 end
 
 if __FILE__ == $0
