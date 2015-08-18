@@ -60,26 +60,50 @@ migration_action(GlobalOrgId, _AcctInfo) ->
 	_ -> true
     end,
     
+    %% Grant global group permissions on users container 
     UserContainerAuthzId = get_user_container_authz_id(),
-    case oc_chef_authz:add_ace_for_entity(SuperuserAuthzId,
-                                          group, GlobalAdminAuthzId,
-                                          container, UserContainerAuthzId,
-                                          read) of
-        {error, ReadAceError} ->
-	    lager:error("Could not add READ ace to users container for global-admins."),
-            throw(ReadAceError);
-        _ -> true
+    Body = iolist_to_binary(jiffy:encode(
+                              {
+                                [
+                                 {<<"actors">>, []}, 
+                                 {<<"groups">>, [GlobalAdminAuthzId]}
+                                ]
+                              }
+                             )),
+
+    ReadUrl = make_url([containers, UserContainerAuthzId, read]),
+    case oc_chef_authz_http:request(ReadUrl, put, [], Body, SuperuserAuthzId) of
+        ok -> true;
+        {error, not_found} -> throw_not_found("read");
+        {error, server_error} -> throw_server_error()
     end,
 
-    case oc_chef_authz:add_ace_for_entity(SuperuserAuthzId,
-                                          group, GlobalAdminAuthzId,
-                                          container, UserContainerAuthzId,
-                                          create) of
-        {error, CreateAceError} ->
-	    lager:error("Could not add READ ace to users container for global-admins."),
-            throw(CreateAceError);
-        _ -> true
+    CreateUrl = make_url([containers, UserContainerAuthzId, create]),
+    case oc_chef_authz_http:request(CreateUrl, put, [], Body, SuperuserAuthzId) of
+        ok -> true;
+        {error, not_found} -> throw_not_found("create");
+        {error, server_error} -> throw_server_error()
     end.
+
+% Vendored from mv_oc_chef_authz since not exported
+to_text(E) when is_binary(E) ->
+    binary_to_list(E);
+to_text(E) when is_atom(E) ->
+    atom_to_list(E);
+to_text(E) when is_list(E) ->
+    E.
+
+make_url(Components) ->
+    string:join([to_text(E) || E <- Components],"/").
+% end vendor
+
+throw_not_found(Type) ->
+    lager:error("Bifrost could not find the " ++ Type ++ " permission on the users container."),
+    throw(not_found).
+
+throw_server_error() ->
+    lager:error("There was an error communicating with bifrost."),
+    throw(server_error).
 
 create_global_admins_authz_group(SuperuserAuthzId) ->
     case mv_oc_chef_authz:create_resource(SuperuserAuthzId, group) of
