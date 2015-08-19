@@ -79,7 +79,7 @@ module Omnibus
     # 'cleanse' operations.
     def cleanse_post_hook(*args)
         external_services.each_key do |service_name|
-          perform_delete = ARGV.include?("--with-remote")
+          perform_delete = ARGV.include?("--with-external")
           if perform_delete
             log "Deleting data from external service: #{service_name}"
           end
@@ -276,7 +276,7 @@ EOM
       <<EOM
 CLEANSE002: Note that Chef Server data was not removed from your
             remote PostgreSQL server because you did not specify
-            the '--with-remote' option.
+            the '--with-external' option.
 
             If you do wish to purge Chef Server data from PostgreSQL,
             you can do by logging into PostgreSQL on
