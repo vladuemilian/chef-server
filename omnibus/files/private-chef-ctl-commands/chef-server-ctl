@@ -1,0 +1,328 @@
+#!/opt/opscode/embedded/bin/ruby
+
+require 'rubygems'
+# Because we're not installed as a gem ourselves,
+# we'll need to explicitly load the omnibus-ctl gem
+# so that we can see it
+# so that we can see it.
+gem 'omnibus-ctl'
+require "omnibus-ctl"
+
+module Omnibus
+
+  # We keep the base behavior of Omnibus::Ctl, but
+  # add our own hooks for before/after command run.
+  # In particular we hook the service calls.
+  class ChefServerCtl < Omnibus::Ctl
+    def command_post_hook(*args)
+      command = args.shift
+      method = to_method_name("#{command}_post_hook")
+      if respond_to?(method)
+        send(method, *args)
+      end
+    end
+
+    # If a command has a pre-hook defined we will run it.
+    # Otherwise, if it is a run-sv command and the service it refers to
+    # is an external service, we will show an error since we
+    # can't control external services from here.
+    def command_pre_hook(*args)
+      command = args.shift
+      method = to_method_name("#{command}_pre_hook")
+      if respond_to?(method)
+        send(method, *args)
+      else
+        return true if args.empty?
+        # SV_COMMAND_NAMES is predefined in Omnibus::Ctl
+        # and contains a list of commands that we hand off to
+        # runsv to manage.
+        if SV_COMMAND_NAMES.include? command
+          if service_external? args[0]
+            log error_external_service(command, args[0])
+            return false;
+          end
+        end
+        true
+      end
+    end
+
+    # If we're listing status for all services and have external
+    # services to show, we'll include an output header to show that
+    # we're reporting internal services
+    def status_pre_hook(service = nil)
+      log_internal_service_header if service.nil?
+      true
+    end
+
+    # Status gets its own hook because each externalized service will
+    # have its own things to do in order to report status.
+    # As above, we may also include an output header to show that we're
+    # reporting on external services.
+    def status_post_hook(service = nil)
+      if service.nil?
+        log_external_service_header
+        external_services.each_key do |service_name|
+          status = send(to_method_name("external_status_#{service_name}"), :sparse)
+          log status
+        end
+      else
+        # Request verbose status if the service is asked for by name.
+        if service_external?(service)
+          status = send(to_method_name("external_status_#{service}"), :verbose)
+          log status
+        end
+      end
+    end
+
+    # Data cleanup requirements for external services aren't met by the standard
+    # 'nuke /var/opt' behavior - this hook allows each service to perform its own
+    # 'cleanse' operations.
+    def cleanse_post_hook(*args)
+        external_services.each_key do |service_name|
+          perform_delete = ARGV.include?("--with-external")
+          if perform_delete
+            log "Deleting data from external service: #{service_name}"
+          end
+          send(to_method_name("external_cleanse_#{service_name}"), perform_delete)
+        end
+    end
+
+    # Add some output headers if we have external services enabled
+    def service_list_pre_hook
+      log_internal_service_header
+      return true
+    end
+
+    # Capture external services in the output list as well.
+    def service_list_post_hook
+      log_external_service_header
+      external_services.each  do |name, settings|
+        log " >  #{name} on #{settings['vip']}"
+      end
+    end
+
+    # Note that as we expand our external service support,
+    # we may want to consider farming external_X functions to
+    # service-specific classes
+    def external_cleanse_postgresql(perform_delete)
+      postgres = external_services['postgresql']
+      exec_list = []
+      # NOTE a better way to handle this particular action may be through a chef_run of a 'cleanse' recipe,
+      # since here we're explicitly reversing the actions we did in-recipe to set the DBs up....
+      superuser = postgres['db_superuser']
+      [ ['oc_bifrost', 'bifrost'], ['opscode-erchef', 'opscode_chef'], ['oc_id', 'oc_id'] ].each do |service|
+        key, dbname = service
+        exec_list << "DROP DATABASE #{dbname}"
+        exec_list << "REVOKE \"#{running_package_config[key]['sql_user']}\" FROM \"#{superuser}\""
+        exec_list << "REVOKE \"#{running_package_config[key]['sql_ro_user']}\" FROM \"#{superuser}\""
+        exec_list << "DROP ROLE \"#{running_package_config[key]['sql_user']}\""
+        exec_list << "DROP ROLE \"#{running_package_config[key]['sql_ro_user']}\""
+      end
+      if perform_delete
+        delete_external_postgresql_data(exec_list, postgres)
+      else
+        path = File.join(backup_dir, "postgresql-manual-cleanup.sql")
+        dump_exec_list_to_file(path, exec_list)
+        log warn_CLEANSE002_no_postgres_delete(path, postgres)
+      end
+    end
+
+    def delete_external_postgresql_data(exec_list, postgres)
+      last = nil
+      begin
+        require "pg"
+        connection = postgresql_connection(postgres)
+        while exec_list.length > 0
+          # Preserve  our position in the list of queries to track where we left off
+          # in case of failure.
+          last = exec_list.shift
+          connection.exec(last)
+        end
+        puts " Chef Server databases and roles have been successsfully deleted from #{postgres['vip']}"
+      rescue Exception => e
+        path = nil
+        unless last.nil?
+          exec_list.insert(0, last)
+          path = Time.now.strftime("/root/%FT%R-chef-server-manual-postgresql-cleanup.sql")
+          dump_exec_list_to_file(path, exec_list)
+        end
+        # Note - we're just showing the error and not exiting, so that
+        # we don't block any other external cleanup that can happen
+        # independent of postgresql.
+        log err_CLEANSE001_postgres_failed(postgres, path, last, e.message)
+      ensure
+        connection.close if connection
+      end
+    end
+
+    def dump_exec_list_to_file(path, list)
+      File.open(path, "w") do |file|
+        list.each { |line| file.puts line }
+      end
+    end
+
+    def external_status_postgresql(detail_level)
+      postgres = external_services['postgresql']
+      begin
+        require "pg"
+        connection =postgresql_connection(postgres)
+        if detail_level == :sparse
+          # We connected, that's all we care about for sparse status
+          # We're going to keep the format similar to the existing output
+          "run: postgresql: connected OK to #{postgres['vip']}:#{postgres['port']}"
+          # to hopefully avoid breaking anyone who parses this.
+        else
+          max_conn = connection.exec("SELECT setting FROM pg_settings WHERE name = 'max_connections'")[0]['setting']
+          total_conn = connection.exec('SELECT sum(numbackends) num FROM pg_stat_database')[0]['num']
+          version = connection.exec('SHOW server_version')[0]['server_version']
+          lock_result =  connection.exec('SELECT pid FROM pg_locks WHERE NOT GRANTED')
+          locks = lock_result.map { |r| r['pid'] }.join(",")
+          if locks.nil? or locks.empty?
+            locks = "none"
+          end
+          postgres_verbose_status(postgres,  version:  version,
+                                             total_conn: total_conn,
+                                             max_conn: max_conn, locks: locks)
+        end
+      rescue Exception => e
+        if detail_level == :sparse
+          "down: postgresql: failed to connect to #{postgres['vip']}:#{postgres['port']}: #{e.message.split("\n")[0]}"
+        else
+          log err_STAT001_postgres_failed(postgres, e.message)
+          Kernel.exit! 128
+        end
+      ensure
+        connection.close if connection
+      end
+    end
+
+    def postgresql_connection(postgres)
+        PGconn.open('user' => postgres['db_superuser'], 'host' => postgres['vip'],
+                    'password' => postgres['db_superuser_password'], 'port' => postgres['port'], 'dbname' => 'template1')
+    end
+    def external_services
+      @externals ||= running_package_config.select { |k, v| v.class == Hash and v["external"] == true }
+    end
+
+    def service_external?(service)
+      return false if service.nil?
+      return external_services.has_key? service
+    end
+
+    def postgres_verbose_status(postgres, info)
+<<EOM
+PostgreSQL
+  * Connected to PostgreSQL v#{info[:version]} on #{postgres['vip']}:#{postgres['port']}
+  * Connections: #{info[:total_conn]} active out of #{info[:max_conn]} maximum.
+  * Processes ids pending locks: #{info[:locks]}
+EOM
+    end
+
+    def error_external_service(command, service)
+  <<EOM
+-------------------------------------------------------------------
+The service #{service} is running externally and cannot be managed
+vi chef-server-ctl.  Please log into #{external_services[service]['vip'] }
+to manage it directly.
+-------------------------------------------------------------------
+EOM
+    end
+
+
+    def err_STAT001_postgres_failed(postgres, message)
+<<EOM
+STAT001: An error occurred while attempting to get status from PostgreSQL
+         running on #{postgres['vip']}:#{postgres['port']}
+
+         The error report follows:
+
+#{format_multiline_message(12, message)}
+
+         See https://docs.chef.io/error_messages.html#stat001-postgres-failed
+         for more information.
+EOM
+    end
+
+    def err_CLEANSE001_postgres_failed(postgres, path, last, message)
+      msg = <<EOM
+CLEANSE001: While local cleanse of Chef Server succeeded, an error occurred while deleting
+            Chef Server data from the external PostgreSQL server at #{postgres['vip']}.
+
+            The error reported was:
+
+#{format_multiline_message(16, message)}
+
+EOM
+      msg << <<-EOM unless last.nil?
+            This occurred when executing the following SQL:
+              #{last}
+EOM
+
+      msg << <<-EOM unless path.nil?
+            Please log into that server as superuser and execute the remaining
+            statements that have been written to the file below:
+
+              #{path}
+EOM
+
+      msg << <<EOM
+
+            See https://docs.chef.io/error_messages.html#cleanse001-postgres-failed
+            for more information.
+EOM
+     msg
+    end
+    def warn_CLEANSE002_no_postgres_delete(sql_path, postgres)
+      <<EOM
+CLEANSE002: Note that Chef Server data was not removed from your
+            remote PostgreSQL server because you did not specify
+            the '--with-external' option.
+
+            If you do wish to purge Chef Server data from PostgreSQL,
+            you can do by logging into PostgreSQL on
+            #{postgres['vip']}:#{postgres['port']}
+            and executing the appropriate SQL staements manually.
+
+            For your convenience, these statements have been saved
+            for you in:
+
+            #{sql_path}
+
+            See https://docs.chef.io/error_messages.html#cleanse002-postgres-not-purged
+            for more information.
+EOM
+    end
+
+    def format_multiline_message(indent, message)
+      if message.class == String
+        message = message.split("\n")
+      end
+      spaces = " "*indent
+      message.map!{|line| "#{spaces}#{line.strip}"}
+      message.join("\n")
+    end
+    def log_internal_service_header
+      # Don't decorate output unless we have
+      # external services to report on.
+      return if external_services.empty?
+      log "-------------------"
+      log " Internal Services "
+      log "-------------------"
+    end
+
+    def log_external_service_header
+      return if external_services.empty?
+      log "-------------------"
+      log " External Services "
+      log "-------------------"
+    end
+  end
+end
+
+ctl = Omnibus::ChefServerCtl.new(ARGV[0])
+ctl.load_files(ARGV[1])
+arguments = ARGV[2..-1] # Get the rest of the command line arguments
+ctl.run(arguments)
+# Note this is misleading - many commands explicitly exit early
+# with a locally-specific exit code...
+exit 0
