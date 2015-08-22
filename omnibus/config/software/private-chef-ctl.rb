@@ -59,7 +59,7 @@ if [ $ID -ne 0 ]; then
    exit 1
 fi
 
-#{install_dir}/embedded/service/chef-server-ctl opscode #{install_dir}/embedded/service/omnibus-ctl "$@"
+#{install_dir}/embedded/service/omnibus-ctl/chef-server-ctl opscode #{install_dir}/embedded/service/omnibus-ctl "$@"
        EOH
     end
   end

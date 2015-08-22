@@ -4,8 +4,9 @@ gem 'omnibus-ctl'
 require 'omnibus-ctl'
 
 module Omnibus
-  # this implements hooks for service callbacks to handle commands
-  # that have different behaviors for external services.
+  # This implements callbacks for handling commands related to the
+  # external services supported by Chef Server. As additional services
+  # are external-enabled, controls/configuration will need to be added here.
   class ChefServerCtl < Omnibus::Ctl
     # Note that as we expand our external service support,
     # we may want to consider farming external_X functions to
@@ -180,11 +181,13 @@ EOM
 
   end
 end
+
+# This replaces the default bin/omnibus-ctl command
+#
 # should include-service really stil define runsv stuff?
 # run2(package-name, include-service, [scan_path])
 # add_command name: blah desc: blah opts: blah proc: blah
 ctl = Omnibus::ChefServerCtl.new(ARGV[0], true, "Chef Server")
 ctl.load_files(ARGV[1])
 arguments = ARGV[2..-1] # Get the rest of the command line arguments
-exit_code = ctl.run(arguments)
-return exit_code
+ctl.run(arguments)
