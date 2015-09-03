@@ -125,7 +125,7 @@ module Opscode
 
       def flattened_object
         flattened_object = Flattener.new(@chef_object).flattened_item
- 
+
         flattened_object[X_CHEF_id_CHEF_X]        = [@obj_id]
         flattened_object[X_CHEF_database_CHEF_X]  = [@database]
         flattened_object[X_CHEF_type_CHEF_X]      = [@obj_type]
@@ -231,7 +231,7 @@ module Opscode
       end
 
       def solr_url
-        @solr_url ||= Expander.config.solr_url + '/solr/update'
+        @solr_url ||= Expander.config.solr_url + '/update'
       end
 
       def indexed_object

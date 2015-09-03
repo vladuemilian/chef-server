@@ -148,13 +148,16 @@ default['private_chef']['opscode-solr4']['log_rotation']['file_maxbytes'] = 1048
 default['private_chef']['opscode-solr4']['log_rotation']['num_to_keep'] = 10
 # defaults for heap size and new generation size are computed in the chef-solr
 # recipe based on node memory
+default['private_chef']['opscode-solr4']['external'] = false
 default['private_chef']['opscode-solr4']['heap_size'] = nil
 default['private_chef']['opscode-solr4']['new_size'] = nil
 default['private_chef']['opscode-solr4']['java_opts'] = ""
-default['private_chef']['opscode-solr4']['url'] = "http://localhost:8983/solr"
+default['private_chef']['opscode-solr4']['webapp_path'] = 'solr'
+default['private_chef']['opscode-solr4']['collection'] = 'collection1'
 default['private_chef']['opscode-solr4']['ip_address'] = '127.0.0.1'
 default['private_chef']['opscode-solr4']['vip'] = '127.0.0.1'
 default['private_chef']['opscode-solr4']['port'] = 8983
+default['private_chef']['opscode-solr4']['url'] = "http://#{node['private_chef']['opscode-solr4']['vip']}:#{node['private_chef']['opscode-solr4']['port']}/#{node['private_chef']['opscode-solr4']['webapp_path']}/#{node['private_chef']['opscode-solr4']['collection']}"
 default['private_chef']['opscode-solr4']['ram_buffer_size'] = 100
 default['private_chef']['opscode-solr4']['merge_factor'] = 15
 default['private_chef']['opscode-solr4']['max_merge_docs'] = 2147483647
